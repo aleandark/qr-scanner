@@ -3,46 +3,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Сканер штрих-кода</title>
+    <title>Scanner</title>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { font-family: sans-serif; background-color: #000; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        #reader { width: 100%; max-width: 500px; }
-        h1 { font-size: 20px; margin-bottom: 20px; }
-        #status { margin-top: 10px; color: #aaa; }
+        body { 
+            margin: 0; 
+            padding: 0; 
+            background-color: #000; 
+            color: #fff; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            overflow: hidden;
+        }
+        #reader { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: cover;
+        }
+        /* Рамка прицела поверх видео */
+        #overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 250px;
+            height: 250px;
+            border: 2px solid rgba(255, 255, 255, 0.6);
+            border-radius: 15px;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+            pointer-events: none;
+            z-index: 10;
+        }
+        #status {
+            position: absolute;
+            bottom: 30px;
+            z-index: 20;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-family: sans-serif;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
-    <h1>Наведи камеру на штрих-код</h1>
+
     <div id="reader"></div>
-    <p id="status">Запуск камеры...</p>
+    
+    <div id="overlay"></div>
+    
+    <div id="status">Запуск камеры...</div>
 
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand(); // Раскрыть на весь экран
 
-        function onScanSuccess(decodedText, decodedResult) {
-            // Как только код найден:
-            document.getElementById('status').innerText = "Нашел! " + decodedText;
+        const html5QrCode = new Html5Qrcode("reader");
+
+        const config = { 
+            fps: 10, 
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1.0 
+        };
+
+        // Функция успеха (когда код найден)
+        const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+            document.getElementById('status').innerText = "✅ Нашел: " + decodedText;
             
-            // Отправляем данные боту в Python
+            // Вибрация (если поддерживается телефоном)
+            if (window.navigator.vibrate) {
+                window.navigator.vibrate(200);
+            }
+
+            // Отправляем данные боту
             tg.sendData(decodedText); 
             
-            // Закрываем окно сканера
-            tg.close();
-        }
+            // Останавливаем камеру и закрываем
+            html5QrCode.stop().then(() => {
+                tg.close();
+            }).catch(err => {
+                tg.close();
+            });
+        };
 
-        function onScanFailure(error) {
-            // Шум, пока код не найден (можно игнорировать)
-        }
+        // Запуск камеры (environment = задняя камера)
+        html5QrCode.start(
+            { facingMode: "environment" }, 
+            config, 
+            qrCodeSuccessCallback
+        ).catch(err => {
+            // Если ошибка, пробуем запустить любую доступную камеру (резервный вариант)
+            document.getElementById('status').innerText = "Ошибка задней камеры, пробую любую...";
+            html5QrCode.start(
+                { facingMode: "user" }, 
+                config, 
+                qrCodeSuccessCallback
+            ).catch(err2 => {
+                 document.getElementById('status').innerText = "Ошибка камеры: " + err2;
+            });
+        });
 
-        let html5QrcodeScanner = new Html5QrcodeScanner(
-            "reader", 
-            { fps: 10, qrbox: {width: 250, height: 150} },
-            /* verbose= */ false);
-            
-        html5QrcodeScanner.render(onScanSuccess, onScanFailure);
     </script>
 </body>
 </html>
