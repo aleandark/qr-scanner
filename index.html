@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сканер штрих-кода</title>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { font-family: sans-serif; background-color: #000; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        #reader { width: 100%; max-width: 500px; }
+        h1 { font-size: 20px; margin-bottom: 20px; }
+        #status { margin-top: 10px; color: #aaa; }
+    </style>
+</head>
+<body>
+    <h1>Наведи камеру на штрих-код</h1>
+    <div id="reader"></div>
+    <p id="status">Запуск камеры...</p>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Раскрыть на весь экран
+
+        function onScanSuccess(decodedText, decodedResult) {
+            // Как только код найден:
+            document.getElementById('status').innerText = "Нашел! " + decodedText;
+            
+            // Отправляем данные боту в Python
+            tg.sendData(decodedText); 
+            
+            // Закрываем окно сканера
+            tg.close();
+        }
+
+        function onScanFailure(error) {
+            // Шум, пока код не найден (можно игнорировать)
+        }
+
+        let html5QrcodeScanner = new Html5QrcodeScanner(
+            "reader", 
+            { fps: 10, qrbox: {width: 250, height: 150} },
+            /* verbose= */ false);
+            
+        html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+    </script>
+</body>
+</html>
