@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner</title>
+    <title>Scanner HQ</title>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
@@ -14,12 +14,11 @@
             color: #fff; 
             height: 100vh; 
             width: 100vw;
-            overflow: hidden; /* Убираем прокрутку */
+            overflow: hidden;
             font-family: sans-serif;
             position: relative;
         }
 
-        /* Контейнер сканера на весь экран */
         #reader { 
             width: 100%; 
             height: 100%; 
@@ -29,14 +28,13 @@
             z-index: 1;
         }
 
-        /* ВАЖНО: Заставляем видео растягиваться */
+        /* Растягиваем видео на весь экран, сохраняя пропорции (crop) */
         #reader video {
             width: 100% !important;
             height: 100% !important;
             object-fit: cover !important;
         }
 
-        /* Рамка прицела (поверх видео) */
         #overlay {
             position: absolute;
             top: 50%;
@@ -44,48 +42,48 @@
             transform: translate(-50%, -50%);
             width: 250px;
             height: 250px;
-            border: 2px solid rgba(255, 255, 255, 0.6);
-            border-radius: 15px;
-            box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.5); /* Затемнение вокруг */
+            border: 2px solid rgba(255, 255, 255, 0.7);
+            border-radius: 20px;
+            box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.6);
             pointer-events: none;
             z-index: 10;
         }
 
         #status {
             position: absolute;
-            bottom: 50px;
+            bottom: 40px;
             left: 0;
             right: 0;
             text-align: center;
             z-index: 20;
-            color: #fff;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
             text-shadow: 1px 1px 2px black;
-            font-size: 16px;
         }
 
-        /* Кнопка фонарика */
         #torch-btn {
             position: absolute;
             top: 20px;
             right: 20px;
             z-index: 30;
-            background: rgba(0, 0, 0, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.5);
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
             border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            font-size: 24px;
+            width: 45px;
+            height: 45px;
+            font-size: 20px;
             color: white;
-            display: none; 
+            display: none; /* Скрыт по умолчанию */
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            backdrop-filter: blur(4px);
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
         }
         #torch-btn.active {
             background: rgba(255, 215, 0, 0.8);
-            border-color: yellow;
             color: black;
+            border-color: #ffcc00;
         }
     </style>
 </head>
@@ -93,7 +91,7 @@
 
     <div id="reader"></div>
     <div id="overlay"></div>
-    <div id="status">Запуск камеры...</div>
+    <div id="status">Загрузка HD камеры...</div>
     <button id="torch-btn" onclick="toggleTorch()">⚡</button>
 
     <script>
@@ -103,20 +101,22 @@
         const html5QrCode = new Html5Qrcode("reader");
         let isTorchOn = false;
 
-        // Конфигурация сканера
-        // Убрали aspectRatio, так как он ломает видео на некоторых телефонах
+        // --- НАСТРОЙКИ КАЧЕСТВА ---
         const config = { 
-            fps: 10, 
+            fps: 15, // Чуть плавнее
             qrbox: { width: 250, height: 250 },
+            // ВАЖНО: Запрашиваем высокое разрешение
             videoConstraints: {
-                facingMode: "environment", // Задняя камера
-                focusMode: "continuous"    // Автофокус (если поддерживается)
+                facingMode: "environment",
+                width: { ideal: 1920 }, // Пытаемся получить Full HD
+                height: { ideal: 1080 },
+                focusMode: "continuous" // Автофокус
             }
         };
 
         const qrCodeSuccessCallback = (decodedText, decodedResult) => {
-            document.getElementById('status').innerText = "✅ Нашел!";
             if (window.navigator.vibrate) window.navigator.vibrate(200);
+            document.getElementById('status').innerText = "✅";
             
             tg.sendData(decodedText); 
             
@@ -125,7 +125,7 @@
             }).catch(err => tg.close());
         };
 
-        // Запуск
+        // Запуск камеры
         html5QrCode.start(
             { facingMode: "environment" }, 
             config, 
@@ -133,14 +133,19 @@
         ).then(() => {
             document.getElementById('status').innerText = "Сканируй штрих-код";
             
-            // Проверка фонарика
-            html5QrCode.getCameraCapabilities().then(capabilities => {
-                if (capabilities.torchFeature().isSupported()) {
+            // --- ИСПРАВЛЕННАЯ ЛОГИКА ФОНАРИКА ---
+            try {
+                // Используем правильный метод getRunningTrackCameraCapabilities
+                const trackCapabilities = html5QrCode.getRunningTrackCameraCapabilities();
+                
+                // Проверяем поддержку Torch
+                if (trackCapabilities && trackCapabilities.torchFeature().isSupported()) {
                     document.getElementById('torch-btn').style.display = "flex";
                 }
-            }).catch(err => {
-                // Игнорируем ошибки получения возможностей камеры
-            });
+            } catch (e) {
+                console.log("Ошибка проверки фонарика: " + e);
+                // Не показываем ошибку пользователю, просто не включаем кнопку
+            }
 
         }).catch(err => {
             document.getElementById('status').innerText = "Ошибка: " + err;
@@ -154,7 +159,7 @@
                 const btn = document.getElementById('torch-btn');
                 isTorchOn ? btn.classList.add('active') : btn.classList.remove('active');
             }).catch(err => {
-                isTorchOn = !isTorchOn; 
+                isTorchOn = !isTorchOn; // Возвращаем статус назад при ошибке
             });
         }
     </script>
