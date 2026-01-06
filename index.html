@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner HQ</title>
+    <title>FatSecret Style Scanner</title>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
@@ -11,157 +11,138 @@
             margin: 0; 
             padding: 0; 
             background-color: #000; 
-            color: #fff; 
-            height: 100vh; 
-            width: 100vw;
             overflow: hidden;
-            font-family: sans-serif;
-            position: relative;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
         }
 
         #reader { 
             width: 100%; 
             height: 100%; 
             position: absolute;
-            top: 0;
+            top: 0; 
             left: 0;
-            z-index: 1;
+            object-fit: cover;
         }
-
-        /* Растягиваем видео на весь экран, сохраняя пропорции (crop) */
+        
         #reader video {
             width: 100% !important;
             height: 100% !important;
             object-fit: cover !important;
         }
 
-        #overlay {
+        /* ЗАТЕМНЕНИЕ ВОКРУГ КВАДРАТА */
+        /* Используем тень огромного размера, чтобы затемнить всё вокруг */
+        .scan-overlay {
+            position: absolute;
+            width: 280px;
+            height: 200px; /* Прямоугольник как на скрине */
+            border-radius: 20px;
+            box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.7); /* Темный фон */
+            border: 2px solid rgba(255, 255, 255, 0.5); /* Полупрозрачная рамка */
+            z-index: 10;
+            overflow: hidden; /* Чтобы красная линия не вылетала */
+        }
+
+        /* КРАСНАЯ ЛИНИЯ */
+        .scan-line {
+            width: 100%;
+            height: 2px;
+            background: red;
             position: absolute;
             top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 250px;
-            height: 250px;
-            border: 2px solid rgba(255, 255, 255, 0.7);
-            border-radius: 20px;
-            box-shadow: 0 0 0 4000px rgba(0, 0, 0, 0.6);
-            pointer-events: none;
-            z-index: 10;
+            animation: scanMove 2s infinite ease-in-out;
+            box-shadow: 0 0 4px red;
         }
 
+        @keyframes scanMove {
+            0% { top: 10%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 90%; opacity: 0; }
+        }
+
+        /* ТЕКСТ ПОДСКАЗКИ */
+        .hint-text {
+            position: absolute;
+            top: 15%;
+            width: 100%;
+            text-align: center;
+            color: #fff;
+            font-size: 18px;
+            font-weight: 500;
+            z-index: 20;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+        }
+
+        /* СТАТУС ВНИЗУ */
         #status {
             position: absolute;
-            bottom: 40px;
-            left: 0;
-            right: 0;
-            text-align: center;
-            z-index: 20;
-            color: rgba(255, 255, 255, 0.8);
+            bottom: 10%;
+            color: rgba(255, 255, 255, 0.7);
             font-size: 14px;
-            text-shadow: 1px 1px 2px black;
+            z-index: 20;
         }
 
-        #torch-btn {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            z-index: 30;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            width: 45px;
-            height: 45px;
-            font-size: 20px;
-            color: white;
-            display: none; /* Скрыт по умолчанию */
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            backdrop-filter: blur(5px);
-            -webkit-backdrop-filter: blur(5px);
-        }
-        #torch-btn.active {
-            background: rgba(255, 215, 0, 0.8);
-            color: black;
-            border-color: #ffcc00;
-        }
     </style>
 </head>
 <body>
 
     <div id="reader"></div>
-    <div id="overlay"></div>
-    <div id="status">Загрузка HD камеры...</div>
-    <button id="torch-btn" onclick="toggleTorch()">⚡</button>
+
+    <div class="hint-text">Сканировать штрихкод</div>
+    
+    <div class="scan-overlay">
+        <div class="scan-line"></div>
+    </div>
+
+    <div id="status">Запуск камеры...</div>
 
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
 
         const html5QrCode = new Html5Qrcode("reader");
-        let isTorchOn = false;
 
-        // --- НАСТРОЙКИ КАЧЕСТВА ---
         const config = { 
-            fps: 15, // Чуть плавнее
-            qrbox: { width: 250, height: 250 },
-            // ВАЖНО: Запрашиваем высокое разрешение
+            fps: 15, 
+            qrbox: { width: 280, height: 200 },
             videoConstraints: {
                 facingMode: "environment",
-                width: { ideal: 1920 }, // Пытаемся получить Full HD
-                height: { ideal: 1080 },
-                focusMode: "continuous" // Автофокус
+                focusMode: "continuous"
             }
         };
 
-        const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+        const onSuccess = (decodedText, decodedResult) => {
             if (window.navigator.vibrate) window.navigator.vibrate(200);
-            document.getElementById('status').innerText = "✅";
             
+            // Пишем успех
+            document.getElementById('status').innerText = "✅ Штрих-код найден!";
+            document.querySelector('.scan-overlay').style.borderColor = "#00ff00"; // Зеленая рамка
+            document.querySelector('.scan-line').style.background = "#00ff00";
+
+            // Отправляем данные
             tg.sendData(decodedText); 
             
-            html5QrCode.stop().then(() => {
-                tg.close();
-            }).catch(err => tg.close());
+            // Закрываем через полсекунды
+            setTimeout(() => {
+                html5QrCode.stop().then(() => tg.close()).catch(() => tg.close());
+            }, 500);
         };
 
-        // Запуск камеры
         html5QrCode.start(
             { facingMode: "environment" }, 
             config, 
-            qrCodeSuccessCallback
+            onSuccess
         ).then(() => {
-            document.getElementById('status').innerText = "Сканируй штрих-код";
-            
-            // --- ИСПРАВЛЕННАЯ ЛОГИКА ФОНАРИКА ---
-            try {
-                // Используем правильный метод getRunningTrackCameraCapabilities
-                const trackCapabilities = html5QrCode.getRunningTrackCameraCapabilities();
-                
-                // Проверяем поддержку Torch
-                if (trackCapabilities && trackCapabilities.torchFeature().isSupported()) {
-                    document.getElementById('torch-btn').style.display = "flex";
-                }
-            } catch (e) {
-                console.log("Ошибка проверки фонарика: " + e);
-                // Не показываем ошибку пользователю, просто не включаем кнопку
-            }
-
+            document.getElementById('status').innerText = "Наведи камеру на код";
         }).catch(err => {
-            document.getElementById('status').innerText = "Ошибка: " + err;
+            document.getElementById('status').innerText = "Ошибка камеры: " + err;
         });
 
-        function toggleTorch() {
-            isTorchOn = !isTorchOn;
-            html5QrCode.applyVideoConstraints({
-                advanced: [{ torch: isTorchOn }]
-            }).then(() => {
-                const btn = document.getElementById('torch-btn');
-                isTorchOn ? btn.classList.add('active') : btn.classList.remove('active');
-            }).catch(err => {
-                isTorchOn = !isTorchOn; // Возвращаем статус назад при ошибке
-            });
-        }
     </script>
 </body>
 </html>
