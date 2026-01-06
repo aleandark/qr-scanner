@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner</title>
+    <title>Scanner + Torch</title>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
@@ -18,13 +18,14 @@
             justify-content: center; 
             height: 100vh; 
             overflow: hidden;
+            font-family: sans-serif;
         }
         #reader { 
             width: 100%; 
             height: 100%; 
             object-fit: cover;
         }
-        /* Рамка прицела поверх видео */
+        /* Рамка прицела */
         #overlay {
             position: absolute;
             top: 50%;
@@ -45,69 +46,114 @@
             background: rgba(0,0,0,0.7);
             padding: 10px 20px;
             border-radius: 20px;
-            font-family: sans-serif;
             font-size: 14px;
+        }
+        /* Кнопка Фонарика */
+        #torch-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 30;
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            font-size: 24px;
+            color: white;
+            display: none; /* Скрыта по умолчанию */
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            backdrop-filter: blur(5px);
+            transition: all 0.3s;
+        }
+        #torch-btn.active {
+            background: rgba(255, 223, 0, 0.6); /* Желтый, когда включен */
+            border-color: yellow;
+            color: black;
+            box-shadow: 0 0 15px rgba(255, 223, 0, 0.5);
         }
     </style>
 </head>
 <body>
 
     <div id="reader"></div>
-    
     <div id="overlay"></div>
-    
     <div id="status">Запуск камеры...</div>
+    
+    <button id="torch-btn" onclick="toggleTorch()">⚡</button>
 
     <script>
         const tg = window.Telegram.WebApp;
-        tg.expand(); // Раскрыть на весь экран
+        tg.expand();
 
         const html5QrCode = new Html5Qrcode("reader");
+        let isTorchOn = false;
 
         const config = { 
             fps: 10, 
             qrbox: { width: 250, height: 250 },
-            aspectRatio: 1.0 
+            aspectRatio: window.innerWidth / window.innerHeight
         };
 
-        // Функция успеха (когда код найден)
         const qrCodeSuccessCallback = (decodedText, decodedResult) => {
             document.getElementById('status').innerText = "✅ Нашел: " + decodedText;
+            if (window.navigator.vibrate) window.navigator.vibrate(200);
             
-            // Вибрация (если поддерживается телефоном)
-            if (window.navigator.vibrate) {
-                window.navigator.vibrate(200);
+            // Если фонарик был включен, выключаем перед закрытием (хороший тон)
+            if (isTorchOn) {
+                html5QrCode.applyVideoConstraints({ advanced: [{ torch: false }] });
             }
 
-            // Отправляем данные боту
             tg.sendData(decodedText); 
             
-            // Останавливаем камеру и закрываем
             html5QrCode.stop().then(() => {
                 tg.close();
-            }).catch(err => {
-                tg.close();
-            });
+            }).catch(err => tg.close());
         };
 
-        // Запуск камеры (environment = задняя камера)
+        // Запуск камеры
         html5QrCode.start(
             { facingMode: "environment" }, 
             config, 
             qrCodeSuccessCallback
-        ).catch(err => {
-            // Если ошибка, пробуем запустить любую доступную камеру (резервный вариант)
-            document.getElementById('status').innerText = "Ошибка задней камеры, пробую любую...";
-            html5QrCode.start(
-                { facingMode: "user" }, 
-                config, 
-                qrCodeSuccessCallback
-            ).catch(err2 => {
-                 document.getElementById('status').innerText = "Ошибка камеры: " + err2;
-            });
+        ).then(() => {
+            // КОГДА КАМЕРА ЗАПУСТИЛАСЬ:
+            document.getElementById('status').innerText = "Сканируй штрих-код";
+            
+            // Проверяем, поддерживает ли камера фонарик
+            const trackCapabilities = html5QrCode.getRunningTrackCameraCapabilities();
+            
+            // Если поддержка Torch есть, показываем кнопку
+            if (trackCapabilities.torchFeature().isSupported()) {
+                document.getElementById('torch-btn').style.display = "flex";
+            }
+        }).catch(err => {
+            document.getElementById('status').innerText = "Ошибка: " + err;
         });
+
+        // Функция переключения фонарика
+        function toggleTorch() {
+            isTorchOn = !isTorchOn;
+            
+            // Применяем настройку к камере
+            html5QrCode.applyVideoConstraints({
+                advanced: [{ torch: isTorchOn }]
+            }).then(() => {
+                // Меняем стиль кнопки
+                const btn = document.getElementById('torch-btn');
+                if (isTorchOn) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            }).catch(err => {
+                console.error("Ошибка фонарика", err);
+                isTorchOn = !isTorchOn; // Возвращаем переменную назад, если ошибка
+            });
+        }
 
     </script>
 </body>
 </html>
-
